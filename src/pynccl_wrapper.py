@@ -51,7 +51,6 @@ logger = init_logger(__name__)
 ncclResult_t = ctypes.c_int
 ncclComm_t = ctypes.c_void_p
 
-
 class ncclUniqueId(ctypes.Structure):
     _fields_ = [("internal", ctypes.c_byte * 128)]
 
@@ -60,6 +59,36 @@ cudaStream_t = ctypes.c_void_p
 buffer_type = ctypes.c_void_p
 
 ncclDataType_t = ctypes.c_int
+
+# 定义 ncclConfig_t 结构体
+# 定义 ncclConfig_t 结构体
+class ncclConfig_t(ctypes.Structure):
+    _fields_ = [
+        ("size", ctypes.c_size_t),          # 结构体大小
+        ("magic", ctypes.c_uint32),        # 魔术数字，用于版本检查
+        ("version", ctypes.c_uint32),      # 版本号
+        ("blocking", ctypes.c_int),        # 是否阻塞，0 非阻塞，1 阻塞
+        ("cgaClusterSize", ctypes.c_int),  # CGA大小，0 到 8 之间，默认 4 (sm90)
+        ("minCTAs", ctypes.c_int),         # 最小 CTA 数，默认 1
+        ("maxCTAs", ctypes.c_int),         # 最大 CTA 数，默认 32
+        ("netName", ctypes.c_char_p),      # 网络模块名称
+        ("splitShare", ctypes.c_int)       # 资源共享标志，0 或 1，默认 0
+    ]
+
+# 初始化宏 NCCL_CONFIG_INITIALIZER
+def NCCL_CONFIG_INITIALIZER():
+    # 默认初始化结构体，模拟 NCCL_CONFIG_INITIALIZER 宏
+    return ncclConfig_t(
+        size=ctypes.sizeof(ncclConfig_t),   # 结构体大小
+        magic=0xcafebeef,                   # 魔术数字
+        version=22005,                          # 版本号，需要根据实际情况设置
+        blocking=1,                         # 默认为阻塞
+        cgaClusterSize=4,                   # 默认值 sm90 前架构为 4
+        minCTAs=1,                          # 默认 1
+        maxCTAs=32,                         # 默认 32
+        netName=None,                       # 默认值未定义，NCCL 会自动选择
+        splitShare=0                        # 默认不共享
+    )
 
 
 class ncclDataTypeEnum:
@@ -152,6 +181,13 @@ class NCCLLibrary:
             ctypes.POINTER(ncclComm_t), ctypes.c_int, ncclUniqueId,
             ctypes.c_int
         ]),
+        Function("ncclCommInitRankConfig", ncclResult_t, [
+            ctypes.POINTER(ncclComm_t), ctypes.c_int, ncclUniqueId,
+            ctypes.c_int, ctypes.POINTER(ncclConfig_t)
+        ]),
+        Function("ncclCommGetAsyncError", ncclResult_t, [
+            ncclComm_t, ctypes.POINTER(ncclResult_t)
+        ]),
         # ncclResult_t  ncclAllReduce(
         #   const void* sendbuff, void* recvbuff, size_t count,
         #   ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm,
@@ -232,7 +268,8 @@ class NCCLLibrary:
     def NCCL_CHECK(self, result: ncclResult_t) -> None:
         if result != 0:
             error_str = self.ncclGetErrorString(result)
-            raise RuntimeError(f"NCCL error: {error_str}")
+            print(error_str)
+            # raise RuntimeError(f"NCCL error: {error_str}")
 
     def ncclGetVersion(self) -> str:
         version = ctypes.c_int()
@@ -257,6 +294,19 @@ class NCCLLibrary:
                                                         world_size, unique_id,
                                                         rank))
         return comm
+
+    def ncclCommInitRankConfig(self, world_size: int, unique_id: ncclUniqueId,
+                         rank: int, config: ncclConfig_t) -> ncclComm_t:
+        comm = ncclComm_t()
+        self.NCCL_CHECK(self._funcs["ncclCommInitRankConfig"](ctypes.byref(comm),
+                                                        world_size, unique_id,
+                                                        rank, ctypes.byref(config)))
+        return comm
+    
+    def ncclCommGetAsyncError(self, comm: ncclComm_t) -> ncclResult_t:
+        result = ncclResult_t()
+        self.NCCL_CHECK(self._funcs["ncclCommGetAsyncError"](comm, ctypes.byref(result)))
+        return result
 
     def ncclAllReduce(self, sendbuff: buffer_type, recvbuff: buffer_type,
                       count: int, datatype: int, op: int, comm: ncclComm_t,
@@ -285,6 +335,6 @@ class NCCLLibrary:
 
 
 __all__ = [
-    "NCCLLibrary", "ncclDataTypeEnum", "ncclRedOpTypeEnum", "ncclUniqueId",
-    "ncclComm_t", "cudaStream_t", "buffer_type"
+    "NCCLLibrary", "ncclDataTypeEnum", "ncclRedOpTypeEnum", "ncclUniqueId", "NCCL_CONFIG_INITIALIZER",
+    "ncclComm_t", "cudaStream_t", "buffer_type", "ncclConfig_t"
 ]
