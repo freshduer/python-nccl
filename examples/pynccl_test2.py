@@ -39,10 +39,9 @@ torch.cuda.set_device(rank)
 comms[rank] = nccl_lib.ncclCommInitRankConfig(size, unique_id, rank, config)
 while True:
     state = nccl_lib.ncclCommGetAsyncError(comms[rank]).value
-    print(f"rank:{rank},state:{state}")
     if state != 7:
         break
-kv_cache_shape = (1, 2, 64)  # Adjust as needed
+kv_cache_shape = (1, 2, 3)  # Adjust as needed
 # Set each process to use a different GPU device
 device = torch.device(f'cuda:{rank}')  # Assign GPU device based on rank
 dtype = torch.float32
@@ -50,10 +49,8 @@ pin_memory = False  # Enable pinned memory if needed
 
 # Create a CUDA tensor
 kv_cache = torch.full(kv_cache_shape, fill_value=42, dtype=dtype, device=device, pin_memory=pin_memory)
-
 # Initialize the recv_tensor for AllReduce results
 recv_tensor = torch.zeros_like(kv_cache)
-
 sendbuff = kv_cache.data_ptr()
 recvbuff = recv_tensor.data_ptr()
 count = kv_cache.numel()
@@ -63,7 +60,7 @@ stream = torch.cuda.Stream(device=torch.device(f'cuda:{rank}'))
 
 # Execute AllReduce operation
 if rank == 0:
-    time.sleep(5)
+    # time.sleep(5)
 # nccl_lib.ncclAllReduce(
 #     sendbuff=sendbuff, 
 #     recvbuff=recvbuff, 
@@ -75,14 +72,20 @@ if rank == 0:
 # )
 
 if rank == 0:
-    nccl_lib.ncclSend(
-        sendbuff=sendbuff, 
-        count=count,
-        datatype=datatype,
-        dest=1,
-        comm=comms[rank],
-        stream=ctypes.c_void_p(0)
-    )
+    for i in range(size):
+        nccl_lib.ncclSend(
+            sendbuff=sendbuff, 
+            count=count,
+            datatype=datatype,
+            dest=i+1,
+            comm=comms[rank],
+            stream=ctypes.c_void_p(0)
+        )
+        while True:
+            state = nccl_lib.ncclCommGetAsyncError(comms[rank]).value
+            # print(f"rank:{rank},state:{state}")
+            if state != 7:
+                break
 else:
     nccl_lib.ncclRecv(
         recvbuff=recvbuff, 
@@ -92,12 +95,12 @@ else:
         comm=comms[rank],
         stream=ctypes.c_void_p(0)
     )
+    while True:
+        state = nccl_lib.ncclCommGetAsyncError(comms[rank]).value
+        # print(f"rank:{rank},state:{state}")
+        if state != 7:
+            break
 
-while True:
-    state = nccl_lib.ncclCommGetAsyncError(comms[rank]).value
-    print(f"rank:{rank},state:{state}")
-    if state != 7:
-        break
 torch.cuda.synchronize()
 nccl_lib.ncclCommDestroy(comms[rank])
 

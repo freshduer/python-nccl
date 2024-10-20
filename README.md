@@ -9,8 +9,14 @@ bash test1.sh
 
 # Example2 -- blocking nccl:
 cd examples
-bash test2.sh  
+bash pynccl_test1.sh  
 
 # Example3 -- nonblocking nccl:
 cd examples
-bash test3.sh  
+bash pynccl_test2.sh  
+
+# Example4 -- nonblocking nccl + controler fault torlerance:
+cd src/controller
+python controller.py
+python worker.py
+python worker.py 

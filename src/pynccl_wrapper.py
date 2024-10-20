@@ -81,7 +81,7 @@ def NCCL_CONFIG_INITIALIZER():
     return ncclConfig_t(
         size=ctypes.sizeof(ncclConfig_t),   # 结构体大小
         magic=0xcafebeef,                   # 魔术数字
-        version=22005,                          # 版本号，需要根据实际情况设置
+        version=22005,                      # 版本号，需要根据实际情况设置,如果不调整，那么non blocking不会起作用
         blocking=1,                         # 默认为阻塞
         cgaClusterSize=4,                   # 默认值 sm90 前架构为 4
         minCTAs=1,                          # 默认 1
@@ -188,6 +188,9 @@ class NCCLLibrary:
         Function("ncclCommGetAsyncError", ncclResult_t, [
             ncclComm_t, ctypes.POINTER(ncclResult_t)
         ]),
+        Function("ncclCommAbort", ncclResult_t, [
+            ncclComm_t
+        ]),
         # ncclResult_t  ncclAllReduce(
         #   const void* sendbuff, void* recvbuff, size_t count,
         #   ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm,
@@ -265,10 +268,11 @@ class NCCLLibrary:
     def ncclGetErrorString(self, result: ncclResult_t) -> str:
         return self._funcs["ncclGetErrorString"](result).decode("utf-8")
 
-    def NCCL_CHECK(self, result: ncclResult_t) -> None:
+    def NCCL_CHECK(self, result: ncclResult_t) -> ncclResult_t:
         if result != 0:
             error_str = self.ncclGetErrorString(result)
             print(error_str)
+        return result
             # raise RuntimeError(f"NCCL error: {error_str}")
 
     def ncclGetVersion(self) -> str:
@@ -307,6 +311,9 @@ class NCCLLibrary:
         result = ncclResult_t()
         self.NCCL_CHECK(self._funcs["ncclCommGetAsyncError"](comm, ctypes.byref(result)))
         return result
+
+    def ncclCommAbort(self, comm: ncclComm_t) -> ncclResult_t:
+        return self.NCCL_CHECK(self._funcs["ncclCommAbort"](comm))
 
     def ncclAllReduce(self, sendbuff: buffer_type, recvbuff: buffer_type,
                       count: int, datatype: int, op: int, comm: ncclComm_t,
